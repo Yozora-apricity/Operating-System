@@ -68,3 +68,66 @@ class LeftControlPanel:
         tk.Label(self.table_frame, text="Arrival Time", font=('Helvetica', 10, 'bold'), bg="#E3F2FD").grid(row=0, column=1, padx=5, pady=2)
         tk.Label(self.table_frame, text="Burst Time", font=('Helvetica', 10, 'bold'), bg="#E3F2FD").grid(row=0, column=2, padx=5, pady=2)
         tk.Label(self.table_frame, text="Priority", font=('Helvetica', 10, 'bold'), bg="#E3F2FD").grid(row=0, column=3, padx=5, pady=2)
+    
+    def build_action_buttons(self):
+        action_frame = tk.Frame(self.panel, bg="#E3F2FD")
+        action_frame.grid(row=2, column=0, sticky="ew", pady=(5, 0))
+        action_frame.columnconfigure(2, weight=1)
+        
+        ttk.Button(action_frame, text="+ Add Pn Row", command=self.add_input_row).grid(row=0, column=0, padx=5, pady=5)
+        ttk.Button(action_frame, text="Clear Rows", command=self.clear_rows).grid(row=0, column=1, padx=5, pady=5)
+        
+        btn_run = tk.Button(
+            action_frame, 
+            text="EXECUTE", 
+            command=self.execute_callback, 
+            bg="#2196F3",         
+            fg="white",           
+            activebackground="#0B7BDA", 
+            activeforeground="white",
+            font=('Helvetica', 9, 'bold'),
+            relief="raised",
+            bd=2
+        )
+        btn_run.grid(row=0, column=2, padx=15, pady=5, sticky="e")
+
+    def toggle_quantum_visibility(self, event=None):
+        selected_text = self.algo_var.get()
+        if self.algo_options[selected_text] == "RR":
+            self.quantum_entry.configure(state="normal")
+        else:
+            self.quantum_entry.configure(state="disabled")
+
+    def add_input_row(self):
+        self.process_count += 1
+        row_idx = len(self.input_rows) + 1
+        
+        lbl = tk.Label(self.table_frame, text=f"P{self.process_count}", bg="#E3F2FD")
+        lbl.grid(row=row_idx, column=0, padx=5, pady=2)
+        
+        ent_arrival = ttk.Entry(self.table_frame, width=8)
+        ent_arrival.grid(row=row_idx, column=1, padx=5, pady=2, sticky="ew")
+        
+        ent_burst = ttk.Entry(self.table_frame, width=8)
+        ent_burst.grid(row=row_idx, column=2, padx=5, pady=2, sticky="ew")
+        
+        ent_priority = ttk.Entry(self.table_frame, width=8)
+        ent_priority.insert(0, "0")
+        ent_priority.grid(row=row_idx, column=3, padx=5, pady=2, sticky="ew")
+        
+        self.input_rows.append((self.process_count, ent_arrival, ent_burst, ent_priority, lbl))
+
+    def add_sample_row(self, arr, burst, prio):
+        self.add_input_row()
+        _, ent_arr, ent_burst, ent_prio, _ = self.input_rows[-1]
+        ent_arr.insert(0, str(arr))
+        ent_burst.insert(0, str(burst))
+        ent_prio.delete(0, tk.END)
+        ent_prio.insert(0, str(prio))
+
+    def clear_rows(self):
+        for row in self.input_rows:
+            for widget in row[1:]:
+                widget.destroy()
+        self.input_rows.clear()
+        self.process_count = 0
