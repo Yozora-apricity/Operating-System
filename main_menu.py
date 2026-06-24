@@ -1,124 +1,124 @@
 import sys
+import os
 import subprocess
 import time
 import importlib.util
 import socket
 import platform
+import random
 
-# Auto-install psutil if missing
-def ensure_installed(package_name):
-    if importlib.util.find_spec(package_name) is None:
-        print(f"Missing library detected. Auto-installing '{package_name}'...")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
-            print(f"Successfully installed {package_name}.")
-        except subprocess.CalledProcessError:
-            print(f"Failed to install {package_name}. Please install manually.")
-            sys.exit(1)
+def ensure_installed(pkg):
+    if importlib.util.find_spec(pkg) is None:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
 
 ensure_installed("psutil")
 import psutil
 
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QPushButton, QFrame, 
-                             QGridLayout, QStackedWidget)
+                             QGridLayout, QStackedWidget, QSizePolicy)
 from PyQt6.QtCore import Qt, QTimer, QPointF
-from PyQt6.QtGui import QPainter, QPen, QColor, QPolygonF
+from PyQt6.QtGui import QPainter, QPen, QColor, QPolygonF, QIcon
 
-# --- Custom Widget for Sci-Fi Edge/Corner Design ---
+def get_resource_path(exe_filename, dev_relative_path):
+    """Safely gets the asset path for both dev testing and the final .exe"""
+    base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    target_path = os.path.join(base_path, exe_filename)
+    if not os.path.exists(target_path):
+        target_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), dev_relative_path))
+    return target_path
+
 class SciFiFrame(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("SciFiContainer")
+        self.grid_spacing = 40
+        self.pulses = [] 
+        
+        self.anim_timer = QTimer(self)
+        self.anim_timer.timeout.connect(self.animate_circuit)
+        self.anim_timer.start(33) 
+        
+    def animate_circuit(self):
+        w, h = self.width(), self.height()
+        if w == 0 or h == 0: return
+
+        if random.random() < 0.15: 
+            axis = random.choice(['x', 'y'])
+            length = random.randint(40, 120)
+            speed = random.uniform(3.0, 8.0)
+            if axis == 'x':
+                y = random.choice(range(0, h, self.grid_spacing))
+                self.pulses.append([0, y, speed, axis, 255, length])
+            else:
+                x = random.choice(range(0, w, self.grid_spacing))
+                self.pulses.append([x, 0, speed, axis, 255, length])
+
+        for p in self.pulses:
+            if p[3] == 'x': p[0] += p[2]
+            else: p[1] += p[2]
+            p[4] -= 1.5 
+
+        self.pulses = [p for p in self.pulses if p[4] > 0 and p[0] < w + 150 and p[1] < h + 150]
+        self.update() 
         
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Colors tailored to the bluish theme
-        bg_color = QColor("#111b2b")
-        corner_color = QColor("#1a365d") # Thick mechanical corners
-        accent_color = QColor("#63b3ed") # Cyan lines and crosshairs
-        border_color = QColor("#2b6cb0") # Thin border
+        w, h = self.width(), self.height()
+        painter.fillRect(0, 0, w, h, QColor("#111b2b"))
         
-        width = self.width()
-        height = self.height()
+        grid_pen = QPen(QColor("#182942"), 1)
+        painter.setPen(grid_pen)
+        for x in range(0, w, self.grid_spacing): painter.drawLine(x, 0, x, h)
+        for y in range(0, h, self.grid_spacing): painter.drawLine(0, y, w, y)
         
-        # Fill background
-        painter.fillRect(0, 0, width, height, bg_color)
+        for p in self.pulses:
+            x, y, _, axis, alpha, length = p
+            alpha_val = max(0, min(255, int(alpha)))
+            
+            painter.setPen(QPen(QColor(43, 108, 176, int(alpha_val * 0.5)), 2))
+            if axis == 'x':
+                painter.drawLine(QPointF(max(0, x - length), y), QPointF(x, y))
+            else:
+                painter.drawLine(QPointF(x, max(0, y - length)), QPointF(x, y))
+                
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(99, 179, 237, alpha_val))
+            painter.drawEllipse(QPointF(x, y), 3.5, 3.5)
+            painter.setBrush(QColor(255, 255, 255, alpha_val))
+            painter.drawEllipse(QPointF(x, y), 1.5, 1.5)
         
-        # Draw thin main border inset slightly
-        pen = QPen(border_color, 1)
-        painter.setPen(pen)
-        painter.drawRect(0, 0, width - 1, height - 1)
+        painter.setPen(QPen(QColor("#2b6cb0"), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(0, 0, w - 1, h - 1)
         
-        # --- Draw Thick Geometric Corners (mimicking the 2nd image) ---
-        painter.setBrush(corner_color)
+        painter.setBrush(QColor("#1a365d"))
         painter.setPen(Qt.PenStyle.NoPen)
+        c, t, i = 75, 20, 55 
         
-        c_len = 75  # Length of the corner piece along the edge
-        thick = 20  # Thickness of the corner block
-        inset = c_len - 20 # Inner angle cut
+        polygons = [
+            [(0,0), (c,0), (i,t), (t,t), (t,i), (0,c)], 
+            [(w,0), (w-c,0), (w-i,t), (w-t,t), (w-t,i), (w,c)], 
+            [(0,h), (c,h), (i,h-t), (t,h-t), (t,h-i), (0,h-c)], 
+            [(w,h), (w-c,h), (w-i,h-t), (w-t,h-t), (w-t,h-i), (w,h-c)] 
+        ]
+        for pts in polygons:
+            painter.drawPolygon(QPolygonF([QPointF(px, py) for px, py in pts]))
         
-        # Top-Left Polygon
-        tl_poly = QPolygonF([
-            QPointF(0, 0), QPointF(c_len, 0), QPointF(inset, thick),
-            QPointF(thick, thick), QPointF(thick, inset), QPointF(0, c_len)
-        ])
-        painter.drawPolygon(tl_poly)
+        painter.setPen(QPen(QColor("#63b3ed"), 2))
+        for cx, cy in [(w-15, 15), (15, h-15)]: 
+            painter.drawLine(cx-4, cy, cx+4, cy)
+            painter.drawLine(cx, cy-4, cx, cy+4)
+        painter.drawPoint(w-15, h-15) 
         
-        # Top-Right Polygon
-        tr_poly = QPolygonF([
-            QPointF(width, 0), QPointF(width - c_len, 0), QPointF(width - inset, thick),
-            QPointF(width - thick, thick), QPointF(width - thick, inset), QPointF(width, c_len)
-        ])
-        painter.drawPolygon(tr_poly)
-        
-        # Bottom-Left Polygon
-        bl_poly = QPolygonF([
-            QPointF(0, height), QPointF(c_len, height), QPointF(inset, height - thick),
-            QPointF(thick, height - thick), QPointF(thick, height - inset), QPointF(0, height - c_len)
-        ])
-        painter.drawPolygon(bl_poly)
-        
-        # Bottom-Right Polygon
-        br_poly = QPolygonF([
-            QPointF(width, height), QPointF(width - c_len, height), QPointF(width - inset, height - thick),
-            QPointF(width - thick, height - thick), QPointF(width - thick, height - inset), QPointF(width, height - c_len)
-        ])
-        painter.drawPolygon(br_poly)
-        
-        # --- Add Corner Details (Crosshairs/Plus signs) ---
-        pen = QPen(accent_color, 2)
-        painter.setPen(pen)
-        
-        # Top Right crosshair
-        tr_cx, tr_cy = width - 15, 15
-        painter.drawLine(tr_cx - 4, tr_cy, tr_cx + 4, tr_cy)
-        painter.drawLine(tr_cx, tr_cy - 4, tr_cx, tr_cy + 4)
-        
-        # Bottom Left crosshair
-        bl_cx, bl_cy = 15, height - 15
-        painter.drawLine(bl_cx - 4, bl_cy, bl_cx + 4, bl_cy)
-        painter.drawLine(bl_cx, bl_cy - 4, bl_cx, bl_cy + 4)
-        
-        # Bottom Right accent dot
-        br_cx, br_cy = width - 15, height - 15
-        painter.drawPoint(br_cx, br_cy)
-        
-        # --- Add Edge Decorative Bars (Top and Bottom) ---
-        pen = QPen(accent_color, 3)
-        painter.setPen(pen)
-        
-        # Top tracking line
-        painter.drawLine(width // 2 - 120, thick, width // 2 + 120, thick)
-        painter.fillRect(width // 2 - 135, thick - 2, 10, 7, accent_color) # Top slider block
-        
-        # Bottom tracking line
-        painter.drawLine(width // 2 - 180, height - thick, width // 2 + 180, height - thick)
-        painter.fillRect(width // 2 - 195, height - thick - 2, 10, 7, accent_color) # Bottom slider block
-
+        painter.setPen(QPen(QColor("#63b3ed"), 3))
+        painter.drawLine(w//2 - 120, t, w//2 + 120, t) 
+        painter.fillRect(w//2 - 135, t - 2, 10, 7, QColor("#63b3ed"))
+        painter.drawLine(w//2 - 180, h-t, w//2 + 180, h-t) 
+        painter.fillRect(w//2 - 195, h-t - 2, 10, 7, QColor("#63b3ed"))
 
 class SciFiDashboard(QMainWindow):
     def __init__(self):
@@ -127,165 +127,147 @@ class SciFiDashboard(QMainWindow):
         self.resize(1050, 650)
         self.setStyleSheet("QMainWindow { background-color: #0d141f; }")
         
+        # Load the Window Icon
+        icon_path = get_resource_path("icon.ico", "assets/icon.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            print(f"Warning: Icon not found at {icon_path}")
+        
         self.last_disk_io = psutil.disk_io_counters()
         self.last_time = time.time()
         
         self.create_ui()
-        
-        # Real-Time Update Timer
         self.timer = QTimer()
-        self.timer.timeout.connect(self.update_system_stats)
+        self.timer.timeout.connect(self.update_stats)
         self.timer.start(1000)
 
     def create_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
         main_layout = QVBoxLayout(central_widget)
-        # Reduced margins to "zoom in" and push the custom frame to the window edges
         main_layout.setContentsMargins(5, 5, 5, 5)
 
-        # Use our custom painted frame
         container = SciFiFrame()
-        container_layout = QVBoxLayout(container)
-        # Increased inner margins to keep content safely away from the heavy borders
-        container_layout.setContentsMargins(45, 45, 45, 35)
+        c_layout = QVBoxLayout(container)
+        c_layout.setContentsMargins(45, 45, 45, 35)
         
-        # --- Top Header Section ---
-        header_layout = QHBoxLayout()
-        
-        computer_name = socket.gethostname().upper()
-        device_model = f"{platform.system()} {platform.release()} [{platform.machine()}]".upper()
-        
-        profile_label = QLabel(f"HOST: {computer_name}\nDEVICE: {device_model}")
-        profile_label.setObjectName("ProfileText")
+        header = QHBoxLayout()
+        profile = QLabel(f"HOST: {socket.gethostname().upper()}\nDEVICE: {platform.system()} {platform.release()} [{platform.machine()}]".upper())
+        profile.setObjectName("ProfileText")
         
         self.btn_devs = QPushButton("SEE DEVELOPERS")
         self.btn_devs.setObjectName("HeaderBtn")
         self.btn_devs.setFixedSize(140, 35)
         self.btn_devs.clicked.connect(self.toggle_view)
 
-        header_layout.addWidget(profile_label)
-        header_layout.addStretch()
-        header_layout.addWidget(self.btn_devs)
+        header.addWidget(profile)
+        header.addStretch()
+        header.addWidget(self.btn_devs)
         
-        # --- Middle Content Section (Stacked Widget) ---
-        self.stacked_widget = QStackedWidget()
+        self.stacked = QStackedWidget()
+        self.stacked.addWidget(self.build_dashboard())
+        self.stacked.addWidget(self.build_developers())
         
-        # Page 1: Dashboard
-        self.dashboard_page = QWidget()
-        self.setup_dashboard_page()
-        self.stacked_widget.addWidget(self.dashboard_page)
-        
-        # Page 2: Developers
-        self.developers_page = QWidget()
-        self.setup_developers_page()
-        self.stacked_widget.addWidget(self.developers_page)
-        
-        # --- Bottom Footer Section ---
-        footer_layout = QHBoxLayout()
-        footer_layout.addStretch()
-        
-        social_label = QLabel("MODULE DEPENDENCIES")
-        social_label.setObjectName("SocialLabel")
-        footer_layout.addWidget(social_label)
+        footer = QHBoxLayout()
+        footer.addStretch()
+        lbl = QLabel("MODULE DEPENDENCIES")
+        lbl.setObjectName("SocialLabel")
+        footer.addWidget(lbl)
         
         for _ in range(4):
-            social_btn = QPushButton("■")
-            social_btn.setObjectName("SocialBtn")
-            social_btn.setFixedSize(30, 30)
-            footer_layout.addWidget(social_btn)
+            btn = QPushButton("■")
+            btn.setObjectName("SocialBtn")
+            btn.setFixedSize(30, 30)
+            footer.addWidget(btn)
 
-        # Assemble main container
-        container_layout.addLayout(header_layout)
-        container_layout.addWidget(self.stacked_widget)
-        container_layout.addLayout(footer_layout)
-        
+        c_layout.addLayout(header)
+        c_layout.addWidget(self.stacked)
+        c_layout.addLayout(footer)
         main_layout.addWidget(container)
         self.apply_styles()
 
-    def setup_dashboard_page(self):
-        layout = QHBoxLayout(self.dashboard_page)
+    def build_dashboard(self):
+        page = QWidget()
+        layout = QHBoxLayout(page)
         layout.setContentsMargins(0, 20, 0, 20)
         
-        # Left Side: Navigation Buttons 
-        nav_layout = QVBoxLayout()
-        nav_layout.setSpacing(15)
+        # Left Side: Navigation (Responsive to Maximization)
+        nav = QVBoxLayout()
+        nav.setSpacing(25) 
+        nav.addStretch(1) # Pushes buttons to center vertically when maximized
         
-        self.btn_cpu = QPushButton("CPU SCHEDULING")
-        self.btn_mem = QPushButton("MEMORY MANAGEMENT")
-        self.btn_vm = QPushButton("VIRTUAL MEMORY")
-        self.btn_disk = QPushButton("DISK MANAGEMENT")
+        modules = [
+            ("CPU SCHEDULING", None), 
+            ("MEMORY MANAGEMENT", None),
+            ("VIRTUAL MEMORY", "virtual_memory/main.py"), 
+            ("DISK MANAGEMENT", "disk_management/main.py")
+        ]
         
-        for btn in [self.btn_cpu, self.btn_mem, self.btn_vm, self.btn_disk]:
+        for name, script in modules:
+            btn = QPushButton(name)
             btn.setObjectName("MenuBtn")
-            nav_layout.addWidget(btn)
+            btn.setMinimumHeight(65) # Taller hit-box for big screens
+            btn.setMaximumWidth(400) # Prevents absurd stretching
+            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            btn.clicked.connect(lambda chk, n=name, s=script: self.launch(n, s))
+            nav.addWidget(btn)
             
-        self.btn_cpu.clicked.connect(self.launch_cpu)
-        self.btn_mem.clicked.connect(self.launch_mem)
-        self.btn_vm.clicked.connect(self.launch_vm)
-        self.btn_disk.clicked.connect(self.launch_disk)
+        nav.addStretch(1) 
+        
+        # Wrap nav inside an expanding horizontal block to keep buttons anchored nicely
+        nav_container = QHBoxLayout()
+        nav_container.addLayout(nav)
+        nav_container.addStretch(1)
+        
+        # Right Side: Scores/Status
+        scores = QFrame()
+        scores.setObjectName("ScoresFrame")
+        scores.setMaximumWidth(320) # Keeps stats box tightly wrapped on large screens
+        s_layout = QVBoxLayout(scores)
+        s_layout.setSpacing(10)
+        
+        title = QLabel("SYSTEM STATUS //////////")
+        title.setObjectName("ScoresTitle")
+        s_layout.addWidget(title)
+        
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        self.stats = {"CPU": QLabel("◈ -- %"), "MEM": QLabel("◎ -- MB"), "DISK": QLabel("❖ -- KB/s")}
+        
+        for i, (key, label) in enumerate(zip(["CPU LOAD", "MEM USAGE", "DISK I/O"], self.stats.values())):
+            label.setObjectName("ScoreValueBox")
+            lbl_title = QLabel(key)
+            lbl_title.setObjectName("ScoreLabel")
+            grid.addWidget(lbl_title, i*2, 0)
+            grid.addWidget(label, i*2+1, 0)
             
-        nav_layout.addStretch() 
+        s_layout.addLayout(grid)
+        s_layout.addStretch()
         
-        # Right Side: Scores/Status Panel 
-        scores_frame = QFrame()
-        scores_frame.setObjectName("ScoresFrame")
-        scores_layout = QVBoxLayout(scores_frame)
-        scores_layout.setSpacing(10)
+        total = QFrame()
+        total.setObjectName("TotalFrame")
+        total.setFixedHeight(45) 
         
-        title_label = QLabel("SYSTEM STATUS //////////")
-        title_label.setObjectName("ScoresTitle")
-        scores_layout.addWidget(title_label)
+        t_layout = QHBoxLayout(total)
+        t_text = QLabel("Active Processes:")
+        t_text.setObjectName("TotalText")
+        self.lbl_procs = QLabel("--")
+        self.lbl_procs.setObjectName("TotalText")
+        self.lbl_procs.setAlignment(Qt.AlignmentFlag.AlignRight)
         
-        grid_layout = QGridLayout()
-        grid_layout.setSpacing(10)
+        t_layout.addWidget(t_text)
+        t_layout.addWidget(self.lbl_procs)
+        s_layout.addWidget(total)
         
-        self.lbl_cpu_val = QLabel("◈ -- %")
-        self.lbl_mem_val = QLabel("◎ -- MB")
-        self.lbl_disk_val = QLabel("❖ -- KB/s")
-        
-        for lbl in [self.lbl_cpu_val, self.lbl_mem_val, self.lbl_disk_val]:
-            lbl.setObjectName("ScoreValueBox")
-            
-        lbl_cpu = QLabel("CPU LOAD")
-        lbl_cpu.setObjectName("ScoreLabel")
-        grid_layout.addWidget(lbl_cpu, 0, 0)
-        grid_layout.addWidget(self.lbl_cpu_val, 1, 0)
-        
-        lbl_mem = QLabel("MEM USAGE")
-        lbl_mem.setObjectName("ScoreLabel")
-        grid_layout.addWidget(lbl_mem, 2, 0)
-        grid_layout.addWidget(self.lbl_mem_val, 3, 0)
-        
-        lbl_disk = QLabel("DISK I/O")
-        lbl_disk.setObjectName("ScoreLabel")
-        grid_layout.addWidget(lbl_disk, 4, 0)
-        grid_layout.addWidget(self.lbl_disk_val, 5, 0)
-            
-        scores_layout.addLayout(grid_layout)
-        
-        total_frame = QFrame()
-        total_frame.setObjectName("TotalFrame")
-        total_layout = QHBoxLayout(total_frame)
-        
-        total_text = QLabel("Active Processes:")
-        total_text.setObjectName("TotalText")
-        
-        self.lbl_procs_val = QLabel("--")
-        self.lbl_procs_val.setObjectName("TotalText")
-        self.lbl_procs_val.setAlignment(Qt.AlignmentFlag.AlignRight)
-        
-        total_layout.addWidget(total_text)
-        total_layout.addWidget(self.lbl_procs_val)
-        scores_layout.addWidget(total_frame)
-        
-        layout.addLayout(nav_layout)
+        layout.addLayout(nav_container)
         layout.addStretch()
-        layout.addWidget(scores_frame)
+        layout.addWidget(scores)
+        return page
 
-    def setup_developers_page(self):
-        layout = QVBoxLayout(self.developers_page)
+    def build_developers(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 20, 0, 20)
         
         title = QLabel("SYSTEM ARCHITECTS & DEVELOPERS")
@@ -293,197 +275,82 @@ class SciFiDashboard(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         
-        # Developer List
-        devs_frame = QFrame()
-        devs_frame.setObjectName("DevsFrame")
-        devs_layout = QVBoxLayout(devs_frame)
-        devs_layout.setSpacing(20)
+        devs = QFrame()
+        devs.setObjectName("DevsFrame")
+        d_layout = QVBoxLayout(devs)
+        d_layout.setSpacing(10) 
         
-        # Lead Developer Data
-        dev_1_name = QLabel("GERALD TAN ROGADO")
-        dev_1_name.setObjectName("DevNameText")
-        dev_1_role = QLabel("Lead Systems Engineer | UI/UX Designer\nGitHub: Yozora-apricity")
-        dev_1_role.setObjectName("DevRoleText")
+        team = [
+            ("AARON CARTAGENA", "System Developer | Collaborator"),
+            ("--------------------------------------------------", ""),
+            ("GELAI BACLEA-AN", "System Developer | Collaborator"),
+            ("--------------------------------------------------", ""),
+            ("GERALD TAN ROGADO", "Lead Systems Engineer | UI/UX Designer\nGitHub: Yozora-apricity"),
+            ("--------------------------------------------------", ""),
+            ("JACIN KURT OCAMPO", "System Developer | Collaborator")
+        ]
         
-        devs_layout.addWidget(dev_1_name)
-        devs_layout.addWidget(dev_1_role)
-        
-        lbl_divider = QLabel("-----------------------------------")
-        lbl_divider.setObjectName("ScoreLabel")
-        devs_layout.addWidget(lbl_divider)
-        
-        dev_2_name = QLabel("TEAM MEMBER 2")
-        dev_2_name.setObjectName("DevNameText")
-        dev_2_role = QLabel("Backend Integration | Data Structures")
-        dev_2_role.setObjectName("DevRoleText")
-        
-        devs_layout.addWidget(dev_2_name)
-        devs_layout.addWidget(dev_2_role)
-        
-        layout.addWidget(devs_frame)
+        for name, role in team:
+            n_lbl = QLabel(name)
+            n_lbl.setObjectName("DevNameText" if role else "ScoreLabel")
+            n_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter if not role else Qt.AlignmentFlag.AlignLeft)
+            d_layout.addWidget(n_lbl)
+            if role:
+                r_lbl = QLabel(role)
+                r_lbl.setObjectName("DevRoleText")
+                d_layout.addWidget(r_lbl)
+                
+        layout.addWidget(devs)
         layout.addStretch()
+        return page
 
     def toggle_view(self):
-        if self.stacked_widget.currentIndex() == 0:
-            self.stacked_widget.setCurrentIndex(1)
-            self.btn_devs.setText("BACK TO DASHBOARD")
-        else:
-            self.stacked_widget.setCurrentIndex(0)
-            self.btn_devs.setText("SEE DEVELOPERS")
+        is_dash = self.stacked.currentIndex() == 0
+        self.stacked.setCurrentIndex(1 if is_dash else 0)
+        self.btn_devs.setText("BACK TO DASHBOARD" if is_dash else "SEE DEVELOPERS")
 
-    def update_system_stats(self):
-        if self.stacked_widget.currentIndex() != 0:
-            return
+    def update_stats(self):
+        if self.stacked.currentIndex() != 0: return
             
-        cpu_usage = psutil.cpu_percent(interval=None)
-        self.lbl_cpu_val.setText(f"◈ {cpu_usage:.1f} %")
+        self.stats["CPU"].setText(f"◈ {psutil.cpu_percent():.1f} %")
+        self.stats["MEM"].setText(f"◎ {psutil.virtual_memory().used / (1024**2):,.0f} MB")
         
-        mem = psutil.virtual_memory()
-        mem_mb = mem.used / (1024 * 1024)
-        self.lbl_mem_val.setText(f"◎ {mem_mb:,.0f} MB")
+        cur_io = psutil.disk_io_counters()
+        dt = time.time() - self.last_time
         
-        current_disk_io = psutil.disk_io_counters()
-        current_time = time.time()
-        
-        if self.last_disk_io and current_disk_io:
-            dt = current_time - self.last_time
-            d_read = current_disk_io.read_bytes - self.last_disk_io.read_bytes
-            d_write = current_disk_io.write_bytes - self.last_disk_io.write_bytes
-            total_kb_s = ((d_read + d_write) / 1024) / dt if dt > 0 else 0
-            self.lbl_disk_val.setText(f"❖ {total_kb_s:,.0f} KB/s")
+        if self.last_disk_io and cur_io and dt > 0:
+            d_bytes = (cur_io.read_bytes + cur_io.write_bytes) - (self.last_disk_io.read_bytes + self.last_disk_io.write_bytes)
+            self.stats["DISK"].setText(f"❖ {(d_bytes / 1024) / dt:,.0f} KB/s")
             
-        self.last_disk_io = current_disk_io
-        self.last_time = current_time
-        
-        num_procs = len(psutil.pids())
-        self.lbl_procs_val.setText(f"{num_procs:,}")
+        self.last_disk_io, self.last_time = cur_io, time.time()
+        self.lbl_procs.setText(f"{len(psutil.pids()):,}")
 
-    def launch_cpu(self):
-        print("Launching CPU Scheduling...")
-        try:
-            subprocess.Popen([sys.executable, "cpu_scheduling/cpu_scheduling_main.py"])
-        except Exception as e:
-            print(f"Error launching CPU Scheduling: {e}")
-
-    def launch_mem(self):
-        print("Launching Memory Management...")
-
-    def launch_vm(self):
-        print("Launching Virtual Memory...")
-        try:
-            subprocess.Popen([sys.executable, "virtual_memory/main.py"])
-        except Exception as e:
-            print(f"Error launching Virtual Memory: {e}")
-
-    def launch_disk(self):
-        print("Launching Disk Management...")
-        try:
-            subprocess.Popen([sys.executable, "disk_management/main.py"])
-        except Exception as e:
-            print(f"Error launching Disk Management: {e}")
+    def launch(self, name, script):
+        print(f"Launching {name}...")
+        if script:
+            try: subprocess.Popen([sys.executable, script])
+            except Exception as e: print(f"Error launching {name}: {e}")
 
     def apply_styles(self):
-        qss = """
-            * {
-                font-family: 'Consolas', 'Courier New', monospace;
-            }
-            QLabel#ProfileText {
-                color: #90cdf4;
-                font-weight: bold;
-                font-size: 11px;
-            }
-            QPushButton#HeaderBtn {
-                background-color: #1a365d;
-                border: 1px solid #4299e1;
-                border-radius: 4px;
-                font-weight: bold;
-                font-size: 11px;
-                color: #ebf8ff;
-            }
-            QPushButton#HeaderBtn:hover {
-                background-color: #2b6cb0;
-            }
-            QPushButton#MenuBtn {
-                background-color: #111b2b;
-                border: 2px solid #2b6cb0;
-                border-radius: 6px;
-                padding: 12px;
-                font-size: 14px;
-                font-weight: bold;
-                color: #63b3ed;
-                min-width: 200px;
-                text-align: center;
-            }
-            QPushButton#MenuBtn:hover {
-                background-color: #2b6cb0;
-                color: #ffffff;
-            }
-            QFrame#ScoresFrame, QFrame#DevsFrame {
-                border: 1px solid #2b6cb0;
-                border-radius: 6px;
-                background-color: #0b1421;
-                min-width: 260px;
-                padding: 15px;
-            }
-            QLabel#ScoresTitle {
-                font-size: 16px;
-                font-weight: bold;
-                color: #90cdf4;
-                margin-bottom: 10px;
-            }
-            QLabel#ScoreLabel {
-                font-size: 10px;
-                font-weight: bold;
-                color: #a0aec0;
-                margin-top: 5px;
-            }
-            QLabel#ScoreValueBox {
-                border: 1px solid #2b6cb0;
-                padding: 6px;
-                font-size: 12px;
-                font-weight: bold;
-                color: #ebf8ff;
-                background-color: #1a365d;
-            }
-            QFrame#TotalFrame {
-                background-color: #2b6cb0;
-                margin-top: 10px;
-                border-radius: 4px;
-                padding: 5px;
-            }
-            QLabel#TotalText {
-                color: #ffffff;
-                font-weight: bold;
-                font-size: 13px;
-            }
-            QLabel#SocialLabel {
-                font-size: 10px;
-                font-weight: bold;
-                color: #90cdf4;
-                margin-right: 10px;
-            }
-            QPushButton#SocialBtn {
-                background-color: transparent;
-                border: 1px solid #2b6cb0;
-                border-radius: 4px;
-                color: #63b3ed;
-            }
-            QPushButton#SocialBtn:hover {
-                background-color: #2b6cb0;
-                color: #ffffff;
-            }
-            QLabel#DevNameText {
-                font-size: 18px;
-                font-weight: bold;
-                color: #ebf8ff;
-            }
-            QLabel#DevRoleText {
-                font-size: 12px;
-                color: #63b3ed;
-                padding-bottom: 10px;
-            }
-        """
-        self.setStyleSheet(qss)
+        self.setStyleSheet("""
+            * { font-family: 'Consolas', 'Courier New', monospace; }
+            QLabel#ProfileText { color: #90cdf4; font-weight: bold; font-size: 11px; }
+            QPushButton#HeaderBtn { background: #1a365d; border: 1px solid #4299e1; border-radius: 4px; font-weight: bold; font-size: 11px; color: #ebf8ff; }
+            QPushButton#HeaderBtn:hover { background: #2b6cb0; }
+            QPushButton#MenuBtn { background: #111b2b; border: 2px solid #2b6cb0; border-radius: 6px; padding: 18px; font-size: 16px; font-weight: bold; color: #63b3ed; min-width: 250px; }
+            QPushButton#MenuBtn:hover { background: #2b6cb0; color: #ffffff; }
+            QFrame#ScoresFrame, QFrame#DevsFrame { border: 1px solid #2b6cb0; border-radius: 6px; background: rgba(11, 20, 33, 0.85); padding: 15px; }
+            QLabel#ScoresTitle { font-size: 16px; font-weight: bold; color: #90cdf4; margin-bottom: 10px; }
+            QLabel#ScoreLabel { font-size: 10px; font-weight: bold; color: #a0aec0; margin-top: 5px; }
+            QLabel#ScoreValueBox { border: 1px solid #2b6cb0; padding: 6px; font-size: 12px; font-weight: bold; color: #ebf8ff; background: rgba(26, 54, 93, 0.9); }
+            QFrame#TotalFrame { background: rgba(43, 108, 176, 0.9); margin-top: 5px; border-radius: 4px; padding: 5px; }
+            QLabel#TotalText { color: #ffffff; font-weight: bold; font-size: 13px; }
+            QLabel#SocialLabel { font-size: 10px; font-weight: bold; color: #90cdf4; margin-right: 10px; }
+            QPushButton#SocialBtn { background: transparent; border: 1px solid #2b6cb0; border-radius: 4px; color: #63b3ed; }
+            QPushButton#SocialBtn:hover { background: #2b6cb0; color: #ffffff; }
+            QLabel#DevNameText { font-size: 16px; font-weight: bold; color: #ebf8ff; }
+            QLabel#DevRoleText { font-size: 11px; color: #63b3ed; padding-bottom: 5px; }
+        """)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
