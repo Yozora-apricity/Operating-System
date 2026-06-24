@@ -1,11 +1,4 @@
-import sys
-import os
-import subprocess
-import time
-import importlib.util
-import socket
-import platform
-import random
+import sys, os, subprocess, time, importlib.util, socket, platform, random
 
 def ensure_installed(pkg):
     if importlib.util.find_spec(pkg) is None:
@@ -17,7 +10,7 @@ import psutil
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QPushButton, QFrame, 
                              QGridLayout, QStackedWidget, QSizePolicy)
-from PyQt6.QtCore import Qt, QTimer, QPointF
+from PyQt6.QtCore import Qt, QTimer, QPointF, QEvent
 from PyQt6.QtGui import QPainter, QPen, QColor, QPolygonF, QIcon
 
 def get_resource_path(exe_filename, dev_relative_path):
@@ -28,12 +21,38 @@ def get_resource_path(exe_filename, dev_relative_path):
         target_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), dev_relative_path))
     return target_path
 
+# --- Custom Widget for Circuit Line Separator ---
+class CircuitSeparator(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(20)
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        painter.setPen(QPen(QColor("#2b6cb0"), 1.5))
+        # Draw a technical circuit line underneath the names
+        painter.drawLine(0, 10, 230, 10)
+        painter.drawLine(230, 10, 240, 15)
+        painter.drawLine(240, 15, 260, 15)
+        
+        # End Node
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#63b3ed"))
+        painter.drawEllipse(QPointF(260, 15), 2.5, 2.5)
+
+# --- Custom Widget for Background and Cursor ---
 class SciFiFrame(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("SciFiContainer")
         self.grid_spacing = 40
         self.pulses = [] 
+        
+        # Cursor Tracking Variables
+        self.mouse_pos = QPointF(-100, -100)
+        self.trail_points = []
         
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self.animate_circuit)
@@ -43,6 +62,7 @@ class SciFiFrame(QFrame):
         w, h = self.width(), self.height()
         if w == 0 or h == 0: return
 
+        # Circuit Pulse Animation
         if random.random() < 0.15: 
             axis = random.choice(['x', 'y'])
             length = random.randint(40, 120)
@@ -58,8 +78,15 @@ class SciFiFrame(QFrame):
             if p[3] == 'x': p[0] += p[2]
             else: p[1] += p[2]
             p[4] -= 1.5 
+            
+        # Cursor Trail Animation (Fade out)
+        for pt in self.trail_points:
+            pt[2] -= 18 
 
+        # Clean dead particles
         self.pulses = [p for p in self.pulses if p[4] > 0 and p[0] < w + 150 and p[1] < h + 150]
+        self.trail_points = [pt for pt in self.trail_points if pt[2] > 0]
+        
         self.update() 
         
     def paintEvent(self, event):
@@ -70,11 +97,13 @@ class SciFiFrame(QFrame):
         w, h = self.width(), self.height()
         painter.fillRect(0, 0, w, h, QColor("#111b2b"))
         
+        # --- 1. Grid ---
         grid_pen = QPen(QColor("#182942"), 1)
         painter.setPen(grid_pen)
         for x in range(0, w, self.grid_spacing): painter.drawLine(x, 0, x, h)
         for y in range(0, h, self.grid_spacing): painter.drawLine(0, y, w, y)
         
+        # --- 2. Circuit Pulses ---
         for p in self.pulses:
             x, y, _, axis, alpha, length = p
             alpha_val = max(0, min(255, int(alpha)))
@@ -90,7 +119,27 @@ class SciFiFrame(QFrame):
             painter.drawEllipse(QPointF(x, y), 3.5, 3.5)
             painter.setBrush(QColor(255, 255, 255, alpha_val))
             painter.drawEllipse(QPointF(x, y), 1.5, 1.5)
+            
+        # --- 3. Red Electric Cursor & Animated Trail ---
+        if len(self.trail_points) > 1:
+            for i in range(1, len(self.trail_points)):
+                p1, p2 = self.trail_points[i-1], self.trail_points[i]
+                alpha = max(0, min(255, int(p2[2])))
+                painter.setPen(QPen(QColor(255, 50, 50, alpha), 2))
+                painter.drawLine(QPointF(p1[0], p1[1]), QPointF(p2[0], p2[1]))
+                
+        mx, my = self.mouse_pos.x(), self.mouse_pos.y()
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 50, 50, 255))
+        painter.drawEllipse(QPointF(mx, my), 4, 4)
+        painter.setBrush(QColor(255, 200, 200, 255))
+        painter.drawEllipse(QPointF(mx, my), 2, 2)
         
+        painter.setPen(QPen(QColor(255, 50, 50, 200), 1))
+        painter.drawLine(int(mx-8), int(my), int(mx+8), int(my))
+        painter.drawLine(int(mx), int(my-8), int(mx), int(my+8))
+        
+        # --- 4. Main Borders ---
         painter.setPen(QPen(QColor("#2b6cb0"), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(0, 0, w - 1, h - 1)
@@ -108,6 +157,7 @@ class SciFiFrame(QFrame):
         for pts in polygons:
             painter.drawPolygon(QPolygonF([QPointF(px, py) for px, py in pts]))
         
+        # --- 5. Crosshairs & Sliders ---
         painter.setPen(QPen(QColor("#63b3ed"), 2))
         for cx, cy in [(w-15, 15), (15, h-15)]: 
             painter.drawLine(cx-4, cy, cx+4, cy)
@@ -127,20 +177,35 @@ class SciFiDashboard(QMainWindow):
         self.resize(1050, 650)
         self.setStyleSheet("QMainWindow { background-color: #0d141f; }")
         
-        # Load the Window Icon
-        icon_path = get_resource_path("icon.ico", "assets/icon.ico")
+        # Load the settings icon
+        icon_path = get_resource_path("settings.ico", "assets/settings.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
-        else:
-            print(f"Warning: Icon not found at {icon_path}")
-        
+            
         self.last_disk_io = psutil.disk_io_counters()
         self.last_time = time.time()
         
         self.create_ui()
+        
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_stats)
         self.timer.start(1000)
+        
+        # Subprocess tracking
+        self.active_process = None
+        self.monitor_timer = QTimer(self)
+        self.monitor_timer.timeout.connect(self.check_process_status)
+        
+        # Enable Global Mouse Tracking for Custom Cursor
+        QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """Captures global mouse movements to update the custom cursor."""
+        if event.type() == QEvent.Type.MouseMove and hasattr(self, 'container'):
+            pos = self.container.mapFromGlobal(event.globalPosition().toPoint())
+            self.container.mouse_pos = pos
+            self.container.trail_points.append([pos.x(), pos.y(), 255])
+        return super().eventFilter(obj, event)
 
     def create_ui(self):
         central_widget = QWidget()
@@ -148,8 +213,8 @@ class SciFiDashboard(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(5, 5, 5, 5)
 
-        container = SciFiFrame()
-        c_layout = QVBoxLayout(container)
+        self.container = SciFiFrame()
+        c_layout = QVBoxLayout(self.container)
         c_layout.setContentsMargins(45, 45, 45, 35)
         
         header = QHBoxLayout()
@@ -171,35 +236,31 @@ class SciFiDashboard(QMainWindow):
         
         footer = QHBoxLayout()
         footer.addStretch()
-        lbl = QLabel("MODULE DEPENDENCIES")
+        lbl = QLabel("CREATED BY GROUP 5")
         lbl.setObjectName("SocialLabel")
         footer.addWidget(lbl)
-        
-        for _ in range(4):
-            btn = QPushButton("■")
-            btn.setObjectName("SocialBtn")
-            btn.setFixedSize(30, 30)
-            footer.addWidget(btn)
 
         c_layout.addLayout(header)
         c_layout.addWidget(self.stacked)
         c_layout.addLayout(footer)
-        main_layout.addWidget(container)
+        main_layout.addWidget(self.container)
         self.apply_styles()
+        
+        # Hide standard hardware cursor
+        QApplication.setOverrideCursor(Qt.CursorShape.BlankCursor)
 
     def build_dashboard(self):
         page = QWidget()
         layout = QHBoxLayout(page)
         layout.setContentsMargins(0, 20, 0, 20)
         
-        # Left Side: Navigation (Responsive to Maximization)
         nav = QVBoxLayout()
         nav.setSpacing(25) 
-        nav.addStretch(1) # Pushes buttons to center vertically when maximized
+        nav.addStretch(1) 
         
         modules = [
-            ("CPU SCHEDULING", None), 
-            ("MEMORY MANAGEMENT", None),
+            ("CPU SCHEDULING", "cpu_scheduling/cpu_scheduling_main.py"), 
+            ("MEMORY MANAGEMENT", "memory_management/main.py"), 
             ("VIRTUAL MEMORY", "virtual_memory/main.py"), 
             ("DISK MANAGEMENT", "disk_management/main.py")
         ]
@@ -207,23 +268,22 @@ class SciFiDashboard(QMainWindow):
         for name, script in modules:
             btn = QPushButton(name)
             btn.setObjectName("MenuBtn")
-            btn.setMinimumHeight(65) # Taller hit-box for big screens
-            btn.setMaximumWidth(400) # Prevents absurd stretching
+            btn.setMinimumHeight(65)
+            btn.setMaximumWidth(400)
             btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            # Use default argument capture for dynamic buttons
             btn.clicked.connect(lambda chk, n=name, s=script: self.launch(n, s))
             nav.addWidget(btn)
             
         nav.addStretch(1) 
         
-        # Wrap nav inside an expanding horizontal block to keep buttons anchored nicely
         nav_container = QHBoxLayout()
         nav_container.addLayout(nav)
         nav_container.addStretch(1)
         
-        # Right Side: Scores/Status
         scores = QFrame()
         scores.setObjectName("ScoresFrame")
-        scores.setMaximumWidth(320) # Keeps stats box tightly wrapped on large screens
+        scores.setMaximumWidth(320)
         s_layout = QVBoxLayout(scores)
         s_layout.setSpacing(10)
         
@@ -278,27 +338,27 @@ class SciFiDashboard(QMainWindow):
         devs = QFrame()
         devs.setObjectName("DevsFrame")
         d_layout = QVBoxLayout(devs)
-        d_layout.setSpacing(10) 
+        d_layout.setSpacing(8) 
         
         team = [
             ("AARON CARTAGENA", "System Developer | Collaborator"),
-            ("--------------------------------------------------", ""),
             ("GELAI BACLEA-AN", "System Developer | Collaborator"),
-            ("--------------------------------------------------", ""),
             ("GERALD TAN ROGADO", "Lead Systems Engineer | UI/UX Designer\nGitHub: Yozora-apricity"),
-            ("--------------------------------------------------", ""),
             ("JACIN KURT OCAMPO", "System Developer | Collaborator")
         ]
         
-        for name, role in team:
+        for i, (name, role) in enumerate(team):
             n_lbl = QLabel(name)
-            n_lbl.setObjectName("DevNameText" if role else "ScoreLabel")
-            n_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter if not role else Qt.AlignmentFlag.AlignLeft)
+            n_lbl.setObjectName("DevNameText")
             d_layout.addWidget(n_lbl)
-            if role:
-                r_lbl = QLabel(role)
-                r_lbl.setObjectName("DevRoleText")
-                d_layout.addWidget(r_lbl)
+            
+            r_lbl = QLabel(role)
+            r_lbl.setObjectName("DevRoleText")
+            d_layout.addWidget(r_lbl)
+            
+            # Insert Circuit Separator between names
+            if i < len(team) - 1:
+                d_layout.addWidget(CircuitSeparator())
                 
         layout.addWidget(devs)
         layout.addStretch()
@@ -326,14 +386,34 @@ class SciFiDashboard(QMainWindow):
         self.lbl_procs.setText(f"{len(psutil.pids()):,}")
 
     def launch(self, name, script):
+        if not script:
+            print(f"Path not established for {name}")
+            return
+            
+        # Standardize path across OS 
+        script_path = os.path.abspath(script)
+        
+        if not os.path.exists(script_path):
+            print(f"Error: Could not locate file -> {script_path}")
+            return
+            
         print(f"Launching {name}...")
-        if script:
-            try: subprocess.Popen([sys.executable, script])
-            except Exception as e: print(f"Error launching {name}: {e}")
+        self.hide() # Minimizes main menu completely
+        
+        # Safely launch the sub-module using its own root directory context
+        script_dir = os.path.dirname(script_path)
+        self.active_process = subprocess.Popen([sys.executable, script_path], cwd=script_dir)
+        self.monitor_timer.start(500) 
+        
+    def check_process_status(self):
+        if self.active_process and self.active_process.poll() is not None:
+            self.monitor_timer.stop()
+            self.active_process = None
+            self.show() # Automatically reopen Main Menu
 
     def apply_styles(self):
         self.setStyleSheet("""
-            * { font-family: 'Consolas', 'Courier New', monospace; }
+            * { font-family: 'Consolas', 'Courier New', monospace; cursor: none; }
             QLabel#ProfileText { color: #90cdf4; font-weight: bold; font-size: 11px; }
             QPushButton#HeaderBtn { background: #1a365d; border: 1px solid #4299e1; border-radius: 4px; font-weight: bold; font-size: 11px; color: #ebf8ff; }
             QPushButton#HeaderBtn:hover { background: #2b6cb0; }
@@ -345,15 +425,17 @@ class SciFiDashboard(QMainWindow):
             QLabel#ScoreValueBox { border: 1px solid #2b6cb0; padding: 6px; font-size: 12px; font-weight: bold; color: #ebf8ff; background: rgba(26, 54, 93, 0.9); }
             QFrame#TotalFrame { background: rgba(43, 108, 176, 0.9); margin-top: 5px; border-radius: 4px; padding: 5px; }
             QLabel#TotalText { color: #ffffff; font-weight: bold; font-size: 13px; }
-            QLabel#SocialLabel { font-size: 10px; font-weight: bold; color: #90cdf4; margin-right: 10px; }
-            QPushButton#SocialBtn { background: transparent; border: 1px solid #2b6cb0; border-radius: 4px; color: #63b3ed; }
-            QPushButton#SocialBtn:hover { background: #2b6cb0; color: #ffffff; }
+            QLabel#SocialLabel { font-size: 12px; font-weight: bold; color: #90cdf4; margin-right: 10px; }
             QLabel#DevNameText { font-size: 16px; font-weight: bold; color: #ebf8ff; }
-            QLabel#DevRoleText { font-size: 11px; color: #63b3ed; padding-bottom: 5px; }
+            QLabel#DevRoleText { font-size: 11px; color: #63b3ed; }
         """)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = SciFiDashboard()
     window.show()
+    
+    # Safe close event to ensure child processes are terminated if main menu forces close
+    app.aboutToQuit.connect(lambda: window.active_process.terminate() if window.active_process else None)
+    
     sys.exit(app.exec())
