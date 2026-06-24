@@ -153,6 +153,4 @@ class VirtualMemoryGUI:
 if __name__ == "__main__":
     root = tk.Tk()
     app = VirtualMemoryGUI(root)
-    root.mainloop()#   d o c u m e n t a t i o n   u p d a t e  
- #   d o c u m e n t a t i o n   u p d a t e  
- 
+    root.mainloop()
