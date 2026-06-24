@@ -42,7 +42,7 @@ class CircuitSeparator(QWidget):
         painter.setBrush(QColor("#63b3ed"))
         painter.drawEllipse(QPointF(260, 15), 2.5, 2.5)
 
-# Cursor Overlay Widget for Custom Cursor and Trail Effect
+# --- Transparent Overlay strictly for the Cursor (Always on top) ---
 class CursorOverlay(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -287,7 +287,7 @@ class SciFiDashboard(QMainWindow):
         
         modules = [
             ("CPU SCHEDULING", "cpu_scheduling/cpu_scheduling_main.py"), 
-            ("MEMORY MANAGEMENT", "memory_management/main.py"), 
+            ("MEMORY MANAGEMENT", "memory_management/memory_management_main.py"), 
             ("VIRTUAL MEMORY", "virtual_memory/main.py"), 
             ("DISK MANAGEMENT", "disk_management/main.py")
         ]
