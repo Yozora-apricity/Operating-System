@@ -1,39 +1,29 @@
-import sys
-import os
-import subprocess
-import importlib.util
-import math
+import sys, os, subprocess, importlib.util, math
 
 def ensure_installed(package_name, import_name=None):
     """Checks if a package is installed, and installs it via pip if it is not."""
-    if import_name is None:
-        import_name = package_name
-        
+    import_name = import_name or package_name
     if importlib.util.find_spec(import_name) is None:
-        print(f"Missing library detected. Auto-installing '{package_name}'... Please wait.")
+        print(f"Missing library detected. Auto-installing '{package_name}'...")
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
             print(f"Successfully installed {package_name}.")
         except subprocess.CalledProcessError:
-            print(f"Failed to install {package_name}. You may need to install it manually.")
+            print(f"Failed to install {package_name}. Install manually.")
             sys.exit(1)
 
 def get_resource_path(exe_filename, dev_relative_path):
     """Safely gets the icon path for both VS Code testing and the final .exe"""
-    try:
-        # If running as a PyInstaller .exe, the icon gets bundled directly into the root temp folder
-        base_path = sys._MEIPASS
-        return os.path.join(base_path, exe_filename)
-    except Exception:
-        # If running in VS Code, anchor the path to THIS script's location so terminal CWD doesn't break it
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        return os.path.abspath(os.path.join(script_dir, dev_relative_path))
+    base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    target_path = os.path.join(base_path, exe_filename)
+    if not os.path.exists(target_path):
+        target_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), dev_relative_path))
+    return target_path
 
 # AUTO-INSTALL EXECUTION
 ensure_installed("PyQt6")
 ensure_installed("matplotlib")
 
-# ORIGINAL IMPORTS AND LOGIC
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QLineEdit, QComboBox, 
                              QPushButton, QMessageBox, QGroupBox, QFormLayout)
@@ -63,68 +53,25 @@ class MplCanvas(FigureCanvasQTAgg):
 class DiskSimulatorApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Disk Management Simulator | Pro")
+        self.setWindowTitle("Disk Management Simulator")
         self.resize(1100, 700)
         
-        # WINDOW ICON
         icon_path = get_resource_path("icon.ico", "../assets/icon.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
-        else:
-            print(f"Warning: Could not find icon at {icon_path}")
         
         # UI/UX THEME (QSS)
-        modern_qss = """
+        self.setStyleSheet("""
         QMainWindow { background-color: #0d1117; }
-        
-        QGroupBox { 
-            color: #c9d1d9; 
-            border: 1px solid #30363d; 
-            border-radius: 8px; 
-            margin-top: 20px; 
-            padding-top: 15px; 
-            font-weight: 600; 
-            font-family: 'Segoe UI', sans-serif; 
-            font-size: 14px; 
-        }
-        
-        QGroupBox::title { 
-            subcontrol-origin: margin; 
-            subcontrol-position: top left; 
-            left: 15px; 
-            top: 0px; 
-            background-color: #0d1117; 
-            padding: 0 8px; 
-        }
-        
+        QGroupBox { color: #c9d1d9; border: 1px solid #30363d; border-radius: 8px; margin-top: 20px; padding-top: 15px; font-weight: 600; font-family: 'Segoe UI', sans-serif; font-size: 14px; }
+        QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 15px; top: 0px; background-color: #0d1117; padding: 0 8px; }
         QLabel { color: #8b949e; font-family: 'Segoe UI', sans-serif; font-size: 13px; }
-        
-        QLineEdit, QComboBox { 
-            background-color: #161b22; 
-            color: #c9d1d9; 
-            border: 1px solid #30363d; 
-            border-radius: 6px; 
-            padding: 8px; 
-            font-family: 'Segoe UI', sans-serif; 
-            font-size: 13px; 
-            selection-background-color: #1f6feb; 
-        }
+        QLineEdit, QComboBox { background-color: #161b22; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 8px; font-family: 'Segoe UI', sans-serif; font-size: 13px; selection-background-color: #1f6feb; }
         QLineEdit:focus, QComboBox:focus { border: 1px solid #58a6ff; }
-        
-        QPushButton { 
-            background-color: #238636; 
-            color: white; 
-            border: none; 
-            border-radius: 6px; 
-            padding: 12px; 
-            font-weight: bold; 
-            font-family: 'Segoe UI', sans-serif; 
-            font-size: 14px; 
-        }
+        QPushButton { background-color: #238636; color: white; border: none; border-radius: 6px; padding: 12px; font-weight: bold; font-family: 'Segoe UI', sans-serif; font-size: 14px; }
         QPushButton:hover { background-color: #2ea043; }
         QPushButton:disabled { background-color: #21262d; color: #484f58; }
-        """
-        self.setStyleSheet(modern_qss)
+        """)
         
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -147,8 +94,9 @@ class DiskSimulatorApp(QMainWindow):
         
         self.label_direction = QLabel("Direction:")
         self.combo_direction = QComboBox()
-        self.combo_direction.addItem("Increasing Track (Right)", "up")
-        self.combo_direction.addItem("Decreasing Track (Left)", "down")
+        self.combo_direction.addItems(["Increasing Track (Right)", "Decreasing Track (Left)"])
+        self.combo_direction.setItemData(0, "up")
+        self.combo_direction.setItemData(1, "down")
         
         self.combo_algo.currentTextChanged.connect(self.update_direction_ui)
         self.update_direction_ui(self.combo_algo.currentText())
@@ -166,13 +114,11 @@ class DiskSimulatorApp(QMainWindow):
         form_layout.addRow(self.label_direction, self.combo_direction)
         form_layout.addRow("", self.btn_run)
         form_layout.addRow(self.label_result)
-        
         control_panel.setLayout(form_layout)
         
         # RIGHT PANEL (Interactive Visualization)
         viz_panel = QGroupBox("Live Scheduling Path")
         viz_layout = QVBoxLayout()
-        
         self.canvas = MplCanvas(self, width=6, height=5, dpi=100)
         viz_layout.addWidget(self.canvas)
         viz_panel.setLayout(viz_layout)
@@ -183,16 +129,12 @@ class DiskSimulatorApp(QMainWindow):
         # ANIMATION VARIABLES
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_animation)
-        self.sequence = []
-        self.current_step = 0
-        self.anim_progress = 0.0  
-        self.x_data = []
-        self.y_data = []
+        self.sequence, self.x_data, self.y_data = [], [], []
+        self.current_step, self.anim_progress = 0, 0.0  
         
-        # HOVER TOOLTIP SETUP
+        # HOVER TOOLTIP SETUP - fixed Matplotlib warning by placing xytext inside
         self.annot = self.canvas.axes.annotate(
-            "", xy=(0,0), xytext=(10, 10),
-            textcoords="offset points",
+            "", xy=(0,0), xytext=(10, 10), xycoords="data", textcoords="offset points",
             bbox=dict(boxstyle="round4,pad=0.5", fc="#161b22", ec="#58a6ff", lw=1),
             color="#ffffff", fontweight='bold', zorder=10
         )
@@ -202,123 +144,101 @@ class DiskSimulatorApp(QMainWindow):
         self.setup_empty_graph()
 
     def update_direction_ui(self, selected_algo):
-        """Hides the direction dropdown completely for FCFS and SSTF."""
-        if selected_algo in ["FCFS", "SSTF"]:
-            self.label_direction.hide()
-            self.combo_direction.hide()
-        else:
-            self.label_direction.show()
-            self.combo_direction.show()
+        visible = selected_algo not in ["FCFS", "SSTF"]
+        self.label_direction.setVisible(visible)
+        self.combo_direction.setVisible(visible)
 
     def apply_dark_theme_to_axes(self):
-        self.canvas.axes.tick_params(colors='#8b949e', labelsize=9)
-        self.canvas.axes.xaxis.label.set_color('#8b949e')
-        self.canvas.axes.yaxis.label.set_color('#8b949e')
-        self.canvas.axes.title.set_color('#c9d1d9')
-        self.canvas.axes.title.set_fontsize(12)
-        self.canvas.axes.title.set_fontweight('bold')
-        
-        self.canvas.axes.spines['bottom'].set_color('#30363d')
-        self.canvas.axes.spines['left'].set_color('#30363d')
-        self.canvas.axes.spines['top'].set_visible(False)
-        self.canvas.axes.spines['right'].set_visible(False)
+        ax = self.canvas.axes
+        ax.tick_params(colors='#8b949e', labelsize=9)
+        ax.xaxis.label.set_color('#8b949e')
+        ax.yaxis.label.set_color('#8b949e')
+        ax.title.set_color('#c9d1d9')
+        ax.title.set_fontsize(12)
+        ax.title.set_fontweight('bold')
+        ax.spines['bottom'].set_color('#30363d')
+        ax.spines['left'].set_color('#30363d')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
 
     def setup_empty_graph(self):
         self.canvas.axes.clear()
         self.canvas.axes.set_title("Ready to Simulate")
-        self.canvas.axes.set_xlabel("Track Number")
-        self.canvas.axes.set_ylabel("Sequence Step")
+        self.canvas.axes.set(xlabel="Track Number", ylabel="Sequence Step")
         self.apply_dark_theme_to_axes()
         self.canvas.axes.grid(True, linestyle='-', color='#21262d', alpha=0.8)
+        self.canvas.fig.tight_layout()
         self.canvas.draw()
 
     def run_simulation(self):
         try:
             head = int(self.input_head.text().strip())
             disk_size = int(self.input_disk_size.text().strip())
-            req_str = self.input_requests.text().split(',')
-            requests = [int(r.strip()) for r in req_str if r.strip()]
+            requests = [int(r.strip()) for r in self.input_requests.text().split(',') if r.strip()]
             algo = self.combo_algo.currentText()
             direction = self.combo_direction.currentData()
             
-            # OUT OF BOUNDS VALIDATION LOGIC
-            if disk_size <= 0:
-                QMessageBox.warning(self, "Invalid Capacity", "Disk Capacity must be greater than 0.")
-                return
+            if disk_size <= 0: return QMessageBox.warning(self, "Invalid Capacity", "Disk Capacity must be > 0.")
+            if not (0 <= head < disk_size): return QMessageBox.warning(self, "Error", f"Head must be 0 to {disk_size - 1}.")
+            if bad_reqs := [str(r) for r in requests if not (0 <= r < disk_size)]:
+                return QMessageBox.warning(self, "Error", f"Requests out of bounds:\n{', '.join(bad_reqs)}")
 
-            if head < 0 or head >= disk_size:
-                QMessageBox.warning(self, "Out of Bounds Error", f"Initial Head ({head}) must be within the disk bounds (0 to {disk_size - 1}).")
-                return
-
-            invalid_requests = [str(r) for r in requests if r < 0 or r >= disk_size]
-            if invalid_requests:
-                QMessageBox.warning(self, "Out of Bounds Error", 
-                                    f"The following requests exceed the disk capacity bounds (0 to {disk_size - 1}):\n{', '.join(invalid_requests)}")
-                return
-            # ----------------------------------------
+            algo_map = {
+                "FCFS": lambda: FCFSScheduler().execute(head, requests),
+                "SSTF": lambda: SSTFScheduler().execute(head, requests),
+                "SCAN": lambda: SCANScheduler(disk_size).execute(head, requests, direction),
+                "C-SCAN": lambda: CSCANScheduler(disk_size).execute(head, requests, direction),
+                "LOOK": lambda: LOOKScheduler().execute(head, requests, direction),
+                "C-LOOK": lambda: CLOOKScheduler().execute(head, requests, direction)
+            }
             
-            result = {}
-            if algo == "FCFS":
-                result = FCFSScheduler().execute(head, requests)
-            elif algo == "SSTF":
-                result = SSTFScheduler().execute(head, requests)
-            elif algo == "SCAN":
-                result = SCANScheduler(disk_size).execute(head, requests, direction)
-            elif algo == "C-SCAN":
-                result = CSCANScheduler(disk_size).execute(head, requests, direction)
-            elif algo == "LOOK":
-                result = LOOKScheduler().execute(head, requests, direction)
-            elif algo == "C-LOOK":
-                result = CLOOKScheduler().execute(head, requests, direction)
-
+            result = algo_map[algo]()
             self.sequence = result["sequence"]
-            movement = result["total_movement"]
-            
-            self.label_result.setText(f"Total Head Movement: {movement}")
-            
+            self.label_result.setText(f"Total Head Movement: {result['total_movement']}")
             self.start_animation(disk_size, algo)
 
         except ValueError:
-            QMessageBox.critical(self, "Input Error", "Please ensure Head, Disk Size, and Requests contain valid numbers.")
+            QMessageBox.critical(self, "Input Error", "Please ensure fields contain valid numbers.")
 
     def start_animation(self, disk_size, algo):
         self.timer.stop()
-        self.current_step = 0
-        self.anim_progress = 0.0
+        self.current_step, self.anim_progress = 0, 0.0
         self.annot.set_visible(False)
         
-        self.canvas.axes.clear()
-        self.canvas.axes.set_title(f"{algo} Scheduling Analysis")
-        self.canvas.axes.set_xlabel("Track Number")
-        self.canvas.axes.set_ylabel("Time (Sequence Step)")
+        ax = self.canvas.axes
+        ax.clear()
+        ax.set_title(f"{algo} Scheduling Analysis")
+        ax.set(xlabel="Track Number", ylabel="Time (Sequence Step)")
         
-        self.canvas.axes.set_xlim(0, disk_size - 1)
-        self.canvas.axes.set_ylim(len(self.sequence) - 0.5, -0.5) 
-        self.canvas.axes.set_yticks(range(len(self.sequence)))
+        x_pad = disk_size * 0.05
+        ax.set_xlim(-x_pad, disk_size - 1 + x_pad)
+        ax.set_ylim(len(self.sequence) - 0.5, -0.5) 
+        ax.set_yticks(range(len(self.sequence)))
         
-        unique_tracks = sorted(list(set(self.sequence)))
-        self.canvas.axes.set_xticks(unique_tracks)
-        self.canvas.axes.tick_params(axis='x', rotation=45)
+        unique_tracks = sorted(list(set(self.sequence + [0, disk_size - 1])))
+        ax.set_xticks(unique_tracks)
         
         self.apply_dark_theme_to_axes()
-        self.canvas.axes.grid(True, linestyle='-', color='#21262d', alpha=0.8)
+        ax.grid(True, linestyle='-', color='#21262d', alpha=0.8)
+
+        # UI LAYOUT FIX: 45-degree tilt with right alignment and added padding
+        ax.set_xticklabels(unique_tracks, rotation=45, ha='right', rotation_mode='anchor', fontsize=8)
+        ax.tick_params(axis='x', pad=8)
         
-        # Re-add annotation object since we cleared the axes
-        self.annot = self.canvas.axes.annotate(
-            "", xy=(0,0), xytext=(10, 10),
-            textcoords="offset points",
+        # HOVER TOOLTIP SETUP - fixed Matplotlib warning here too
+        self.annot = ax.annotate(
+            "", xy=(0,0), xytext=(10, 10), xycoords="data", textcoords="offset points",
             bbox=dict(boxstyle="round4,pad=0.5", fc="#161b22", ec="#58a6ff", lw=1),
             color="#ffffff", fontweight='bold', zorder=10
         )
         self.annot.set_visible(False)
         
-        if len(self.sequence) > 0:
-            self.x_data = [self.sequence[0]]
-            self.y_data = [0]
+        if self.sequence:
+            self.x_data, self.y_data = [self.sequence[0]], [0]
+            self.path_line, = ax.plot(self.x_data, self.y_data, color='#1f6feb', linestyle='-', linewidth=2.5, marker='o', markersize=6, markerfacecolor='#58a6ff', zorder=2)
+            self.playhead, = ax.plot(self.x_data, self.y_data, marker='o', color='#ffffff', markersize=8, zorder=3)
             
-            self.path_line, = self.canvas.axes.plot(self.x_data, self.y_data, color='#1f6feb', linestyle='-', linewidth=2.5, marker='o', markersize=6, markerfacecolor='#58a6ff', zorder=2)
-            self.playhead, = self.canvas.axes.plot(self.x_data, self.y_data, marker='o', color='#ffffff', markersize=8, zorder=3)
-            
+        self.canvas.fig.tight_layout()
         self.canvas.draw()
         
         self.btn_run.setEnabled(False) 
@@ -327,25 +247,16 @@ class DiskSimulatorApp(QMainWindow):
 
     def update_animation(self):
         if self.current_step < len(self.sequence) - 1:
-            self.anim_progress += 0.1 
+            self.anim_progress = min(1.0, self.anim_progress + 0.1)
             
-            if self.anim_progress >= 1.0:
-                self.anim_progress = 1.0
-                
-            start_x = self.sequence[self.current_step]
-            end_x = self.sequence[self.current_step + 1]
-            start_y = self.current_step
-            end_y = self.current_step + 1
+            start_x, end_x = self.sequence[self.current_step], self.sequence[self.current_step + 1]
+            start_y, end_y = self.current_step, self.current_step + 1
             
             current_x = start_x + (end_x - start_x) * self.anim_progress
             current_y = start_y + (end_y - start_y) * self.anim_progress
             
-            temp_x = self.x_data + [current_x]
-            temp_y = self.y_data + [current_y]
-            
-            self.path_line.set_data(temp_x, temp_y)
+            self.path_line.set_data(self.x_data + [current_x], self.y_data + [current_y])
             self.playhead.set_data([current_x], [current_y])
-            
             self.canvas.draw()
             
             if self.anim_progress >= 1.0:
@@ -359,42 +270,38 @@ class DiskSimulatorApp(QMainWindow):
             self.btn_run.setText("Execute Simulation")
 
     def hover_event(self, event):
-        """Displays a tooltip with Track and Step data when hovering over a node."""
-        if not event.inaxes == self.canvas.axes or not self.x_data:
+        if not event.inaxes == self.canvas.axes or not self.x_data or self.timer.isActive():
             if self.annot.get_visible():
                 self.annot.set_visible(False)
                 self.canvas.draw_idle()
             return
-            
-        # Only allow hover interaction when the animation is completely finished
-        if self.timer.isActive():
-            return
 
         x, y = event.xdata, event.ydata
-        closest_idx = -1
-        min_dist = float('inf')
+        min_dist, closest_idx = float('inf'), -1
         
         for i in range(len(self.x_data)):
             dx = (self.x_data[i] - x) / max(1, self.canvas.axes.get_xlim()[1])
             dy = (self.y_data[i] - y) / max(1, self.canvas.axes.get_ylim()[0])
-            dist = math.sqrt(dx**2 + dy**2)
-            
-            if dist < min_dist:
-                min_dist = dist
-                closest_idx = i
+            if (dist := math.sqrt(dx**2 + dy**2)) < min_dist:
+                min_dist, closest_idx = dist, i
 
         if min_dist < 0.05:
-            track = int(self.x_data[closest_idx])
-            step = int(self.y_data[closest_idx])
-            
+            track, step = int(self.x_data[closest_idx]), int(self.y_data[closest_idx])
             self.annot.xy = (track, step)
             self.annot.set_text(f"Track: {track}\nStep: {step}")
+            
+            if track > (self.canvas.axes.get_xlim()[1] * 0.6):
+                self.annot.set_position((-10, 10))
+                self.annot.set_horizontalalignment('right')
+            else:
+                self.annot.set_position((10, 10))
+                self.annot.set_horizontalalignment('left')
+            
             self.annot.set_visible(True)
             self.canvas.draw_idle()
-        else:
-            if self.annot.get_visible():
-                self.annot.set_visible(False)
-                self.canvas.draw_idle()
+        elif self.annot.get_visible():
+            self.annot.set_visible(False)
+            self.canvas.draw_idle()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
