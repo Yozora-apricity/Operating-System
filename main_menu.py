@@ -42,17 +42,58 @@ class CircuitSeparator(QWidget):
         painter.setBrush(QColor("#63b3ed"))
         painter.drawEllipse(QPointF(260, 15), 2.5, 2.5)
 
-# --- Custom Widget for Background and Cursor ---
+# Cursor Overlay Widget for Custom Cursor and Trail Effect
+class CursorOverlay(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Allows clicks to pass through to underlying buttons
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        
+        self.mouse_pos = QPointF(-100, -100)
+        self.trail_points = []
+        
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_trail)
+        self.timer.start(33)
+        
+    def update_trail(self):
+        for pt in self.trail_points:
+            pt[2] -= 18 # Fade out speed
+        self.trail_points = [pt for pt in self.trail_points if pt[2] > 0]
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw Animated Trail
+        if len(self.trail_points) > 1:
+            for i in range(1, len(self.trail_points)):
+                p1, p2 = self.trail_points[i-1], self.trail_points[i]
+                alpha = max(0, min(255, int(p2[2])))
+                painter.setPen(QPen(QColor(255, 50, 50, alpha), 2))
+                painter.drawLine(QPointF(p1[0], p1[1]), QPointF(p2[0], p2[1]))
+                
+        # Draw Electric Red Cursor
+        mx, my = self.mouse_pos.x(), self.mouse_pos.y()
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 50, 50, 255))
+        painter.drawEllipse(QPointF(mx, my), 4, 4)
+        painter.setBrush(QColor(255, 200, 200, 255))
+        painter.drawEllipse(QPointF(mx, my), 2, 2)
+        
+        painter.setPen(QPen(QColor(255, 50, 50, 200), 1))
+        painter.drawLine(int(mx-8), int(my), int(mx+8), int(my))
+        painter.drawLine(int(mx), int(my-8), int(mx), int(my+8))
+
+# --- Custom Widget for Background Border Elements ---
 class SciFiFrame(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("SciFiContainer")
         self.grid_spacing = 40
         self.pulses = [] 
-        
-        # Cursor Tracking Variables
-        self.mouse_pos = QPointF(-100, -100)
-        self.trail_points = []
         
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self.animate_circuit)
@@ -78,15 +119,9 @@ class SciFiFrame(QFrame):
             if p[3] == 'x': p[0] += p[2]
             else: p[1] += p[2]
             p[4] -= 1.5 
-            
-        # Cursor Trail Animation (Fade out)
-        for pt in self.trail_points:
-            pt[2] -= 18 
 
         # Clean dead particles
         self.pulses = [p for p in self.pulses if p[4] > 0 and p[0] < w + 150 and p[1] < h + 150]
-        self.trail_points = [pt for pt in self.trail_points if pt[2] > 0]
-        
         self.update() 
         
     def paintEvent(self, event):
@@ -119,27 +154,8 @@ class SciFiFrame(QFrame):
             painter.drawEllipse(QPointF(x, y), 3.5, 3.5)
             painter.setBrush(QColor(255, 255, 255, alpha_val))
             painter.drawEllipse(QPointF(x, y), 1.5, 1.5)
-            
-        # --- 3. Red Electric Cursor & Animated Trail ---
-        if len(self.trail_points) > 1:
-            for i in range(1, len(self.trail_points)):
-                p1, p2 = self.trail_points[i-1], self.trail_points[i]
-                alpha = max(0, min(255, int(p2[2])))
-                painter.setPen(QPen(QColor(255, 50, 50, alpha), 2))
-                painter.drawLine(QPointF(p1[0], p1[1]), QPointF(p2[0], p2[1]))
-                
-        mx, my = self.mouse_pos.x(), self.mouse_pos.y()
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 50, 50, 255))
-        painter.drawEllipse(QPointF(mx, my), 4, 4)
-        painter.setBrush(QColor(255, 200, 200, 255))
-        painter.drawEllipse(QPointF(mx, my), 2, 2)
         
-        painter.setPen(QPen(QColor(255, 50, 50, 200), 1))
-        painter.drawLine(int(mx-8), int(my), int(mx+8), int(my))
-        painter.drawLine(int(mx), int(my-8), int(mx), int(my+8))
-        
-        # --- 4. Main Borders ---
+        # --- 3. Main Borders ---
         painter.setPen(QPen(QColor("#2b6cb0"), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(0, 0, w - 1, h - 1)
@@ -157,7 +173,7 @@ class SciFiFrame(QFrame):
         for pts in polygons:
             painter.drawPolygon(QPolygonF([QPointF(px, py) for px, py in pts]))
         
-        # --- 5. Crosshairs & Sliders ---
+        # --- 4. Crosshairs & Sliders ---
         painter.setPen(QPen(QColor("#63b3ed"), 2))
         for cx, cy in [(w-15, 15), (15, h-15)]: 
             painter.drawLine(cx-4, cy, cx+4, cy)
@@ -173,7 +189,7 @@ class SciFiFrame(QFrame):
 class SciFiDashboard(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("OS Algorithms Dashboard")
+        self.setWindowTitle("OS Algorithms Simulation - Main Menu")
         self.resize(1050, 650)
         self.setStyleSheet("QMainWindow { background-color: #0d141f; }")
         
@@ -196,16 +212,27 @@ class SciFiDashboard(QMainWindow):
         self.monitor_timer = QTimer(self)
         self.monitor_timer.timeout.connect(self.check_process_status)
         
-        # Enable Global Mouse Tracking for Custom Cursor
+        # Add the Cursor Overlay last so it covers absolutely everything
+        self.cursor_overlay = CursorOverlay(self)
+        self.cursor_overlay.raise_()
+        
+        # Enable Global Mouse Tracking
         QApplication.instance().installEventFilter(self)
 
     def eventFilter(self, obj, event):
-        """Captures global mouse movements to update the custom cursor."""
-        if event.type() == QEvent.Type.MouseMove and hasattr(self, 'container'):
-            pos = self.container.mapFromGlobal(event.globalPosition().toPoint())
-            self.container.mouse_pos = pos
-            self.container.trail_points.append([pos.x(), pos.y(), 255])
+        """Captures global mouse movements and updates the overlay."""
+        if event.type() == QEvent.Type.MouseMove and hasattr(self, 'cursor_overlay'):
+            # Map the global cursor position directly to the overlay's coordinate space
+            pos = self.cursor_overlay.mapFromGlobal(event.globalPosition().toPoint())
+            self.cursor_overlay.mouse_pos = pos
+            self.cursor_overlay.trail_points.append([pos.x(), pos.y(), 255])
         return super().eventFilter(obj, event)
+
+    def resizeEvent(self, event):
+        """Ensures the cursor overlay always fully covers the window edge-to-edge."""
+        super().resizeEvent(event)
+        if hasattr(self, 'cursor_overlay'):
+            self.cursor_overlay.resize(self.size())
 
     def create_ui(self):
         central_widget = QWidget()
@@ -341,10 +368,10 @@ class SciFiDashboard(QMainWindow):
         d_layout.setSpacing(8) 
         
         team = [
-            ("AARON CARTAGENA", "System Developer | Collaborator"),
-            ("GELAI BACLEA-AN", "System Developer | Collaborator"),
-            ("GERALD TAN ROGADO", "Lead Systems Engineer | UI/UX Designer\nGitHub: Yozora-apricity"),
-            ("JACIN KURT OCAMPO", "System Developer | Collaborator")
+            ("AARON CARTAGENA", "Memory Management | Collaborator"),
+            ("GELAI BACLEA-AN", "Virtual Memory | Collaborator"),
+            ("GERALD TAN ROGADO", "Disk Management | UI/UX Designer\nGitHub: Yozora-apricity"),
+            ("JACIN KURT OCAMPO", "CPU Scheduling | Collaborator")
         ]
         
         for i, (name, role) in enumerate(team):
@@ -415,7 +442,7 @@ class SciFiDashboard(QMainWindow):
         self.setStyleSheet("""
             * { font-family: 'Consolas', 'Courier New', monospace; cursor: none; }
             QLabel#ProfileText { color: #90cdf4; font-weight: bold; font-size: 11px; }
-            QPushButton#HeaderBtn { background: #1a365d; border: 1px solid #4299e1; border-radius: 4px; font-weight: bold; font-size: 11px; color: #ebf8ff; }
+            QPushButton#HeaderBtn { background: #1a365d; border: 1px solid #4299e1; border-radius: 4px; font-weight: bold; font-size: 11px; color: #ebf8ff; z-index: 10; }
             QPushButton#HeaderBtn:hover { background: #2b6cb0; }
             QPushButton#MenuBtn { background: #111b2b; border: 2px solid #2b6cb0; border-radius: 6px; padding: 18px; font-size: 16px; font-weight: bold; color: #63b3ed; min-width: 250px; }
             QPushButton#MenuBtn:hover { background: #2b6cb0; color: #ffffff; }
