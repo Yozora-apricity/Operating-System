@@ -50,7 +50,8 @@ class SchedulerEngine:
             elif mode == "RR":
                 selected = rr_queue.pop(0)
                 time_to_run = min(time_quantum, selected.remaining_time)
-                if selected.start_time == -1:
+                
+            if selected.start_time == -1:
                 selected.start_time = current_time
                 
             if gantt_chart and gantt_chart[-1][0] == selected.pid:
