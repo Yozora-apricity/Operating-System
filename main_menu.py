@@ -1,8 +1,18 @@
 import sys, os, subprocess, time, importlib.util, socket, platform, random
 
+# --- FIX FOR PYINSTALLER NOCONSOLE CRASH ---
+# When running as a windowed .exe, print statements will crash the app because there is no console.
+if sys.stdout is None or sys.stderr is None:
+    class DummyWriter:
+        def write(self, *args, **kwargs): pass
+        def flush(self): pass
+    sys.stdout = DummyWriter()
+    sys.stderr = DummyWriter()
+# -------------------------------------------
+
 def ensure_installed(pkg):
     if importlib.util.find_spec(pkg) is None:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 ensure_installed("psutil")
 import psutil
@@ -320,7 +330,7 @@ class SciFiDashboard(QMainWindow):
         
         grid = QGridLayout()
         grid.setSpacing(10)
-        self.stats = {"CPU": QLabel("◈ -- %"), "MEM": QLabel("◎ -- MB"), "DISK": QLabel("❖ -- KB/s")}
+        self.stats = {"CPU": QLabel("► -- %"), "MEM": QLabel("◆ -- MB"), "DISK": QLabel("▼ -- KB/s")}
         
         for i, (key, label) in enumerate(zip(["CPU LOAD", "MEM USAGE", "DISK I/O"], self.stats.values())):
             label.setObjectName("ScoreValueBox")
@@ -398,38 +408,42 @@ class SciFiDashboard(QMainWindow):
 
     def update_stats(self):
         if self.stacked.currentIndex() != 0: return
-            
-        self.stats["CPU"].setText(f"◈ {psutil.cpu_percent():.1f} %")
-        self.stats["MEM"].setText(f"◎ {psutil.virtual_memory().used / (1024**2):,.0f} MB")
+        
+        self.stats["CPU"].setText(f"► {psutil.cpu_percent():.1f} %")
+        self.stats["MEM"].setText(f"◆ {psutil.virtual_memory().used / (1024**2):,.0f} MB")
         
         cur_io = psutil.disk_io_counters()
         dt = time.time() - self.last_time
         
         if self.last_disk_io and cur_io and dt > 0:
             d_bytes = (cur_io.read_bytes + cur_io.write_bytes) - (self.last_disk_io.read_bytes + self.last_disk_io.write_bytes)
-            self.stats["DISK"].setText(f"❖ {(d_bytes / 1024) / dt:,.0f} KB/s")
+            self.stats["DISK"].setText(f"▼ {(d_bytes / 1024) / dt:,.0f} KB/s")
             
         self.last_disk_io, self.last_time = cur_io, time.time()
         self.lbl_procs.setText(f"{len(psutil.pids()):,}")
 
     def launch(self, name, script):
         if not script:
-            print(f"Path not established for {name}")
             return
             
-        # Standardize path across OS 
-        script_path = os.path.abspath(script)
+        script_path = get_resource_path(script, script)
         
         if not os.path.exists(script_path):
-            print(f"Error: Could not locate file -> {script_path}")
             return
             
         print(f"Launching {name}...")
         self.hide() # Minimizes main menu completely
         
-        # Safely launch the sub-module using its own root directory context
         script_dir = os.path.dirname(script_path)
-        self.active_process = subprocess.Popen([sys.executable, script_path], cwd=script_dir)
+        
+        # FIX: Added stdout, stderr, and stdin DEVNULL so Popen doesn't crash in --noconsole mode
+        self.active_process = subprocess.Popen(
+            [sys.executable, script_path], 
+            cwd=script_dir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL
+        )
         self.monitor_timer.start(500) 
         
     def check_process_status(self):
@@ -458,6 +472,22 @@ class SciFiDashboard(QMainWindow):
         """)
 
 if __name__ == "__main__":
+    # --- PYINSTALLER SUBMODULE ROUTER ---
+    import runpy
+    if getattr(sys, 'frozen', False) and len(sys.argv) > 1:
+        target = sys.argv[1]
+        if target.endswith('.py') and os.path.exists(target):
+            
+            # FIX: Ensure the PyInstaller temp path is in sys.path so sub-modules can resolve their dependencies
+            base_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+            if base_dir not in sys.path:
+                sys.path.insert(0, base_dir)
+                
+            os.chdir(os.path.dirname(target))
+            runpy.run_path(target, run_name="__main__")
+            sys.exit(0)
+    # ------------------------------------
+
     app = QApplication(sys.argv)
     window = SciFiDashboard()
     window.show()

@@ -2,19 +2,27 @@ import sys, os, subprocess, importlib.util, math
 
 def ensure_installed(package_name, import_name=None):
     """Checks if a package is installed, and installs it via pip if it is not."""
+    # FIX: Skip auto-install if running compiled .exe because sys.executable is no longer Python
+    if getattr(sys, 'frozen', False):
+        return
+        
     import_name = import_name or package_name
     if importlib.util.find_spec(import_name) is None:
-        print(f"Missing library detected. Auto-installing '{package_name}'...")
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
-            print(f"Successfully installed {package_name}.")
+            # FIX: Added DEVNULL to prevent terminal stdout crashes in windowed mode
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package_name], 
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError:
-            print(f"Failed to install {package_name}. Install manually.")
             sys.exit(1)
 
 def get_resource_path(exe_filename, dev_relative_path):
     """Safely gets the icon path for both VS Code testing and the final .exe"""
     base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    
+    # FIX: Ensure it correctly targets the 'assets' folder inside the PyInstaller hidden directory
+    if getattr(sys, 'frozen', False):
+        return os.path.join(base_path, "assets", exe_filename)
+        
     target_path = os.path.join(base_path, exe_filename)
     if not os.path.exists(target_path):
         target_path = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), dev_relative_path))
@@ -123,9 +131,6 @@ class DiskSimulatorApp(QMainWindow):
         viz_layout.addWidget(self.canvas)
         viz_panel.setLayout(viz_layout)
         
-        main_layout.addWidget(control_panel)
-        main_layout.addWidget(viz_panel)
-        
         # ANIMATION VARIABLES
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_animation)
@@ -225,7 +230,7 @@ class DiskSimulatorApp(QMainWindow):
         ax.set_xticklabels(unique_tracks, rotation=45, ha='right', rotation_mode='anchor', fontsize=8)
         ax.tick_params(axis='x', pad=8)
         
-        # HOVER TOOLTIP SETUP - fixed Matplotlib warning here too
+        # HOVER TOOLTIP SETUP
         self.annot = ax.annotate(
             "", xy=(0,0), xytext=(10, 10), xycoords="data", textcoords="offset points",
             bbox=dict(boxstyle="round4,pad=0.5", fc="#161b22", ec="#58a6ff", lw=1),
